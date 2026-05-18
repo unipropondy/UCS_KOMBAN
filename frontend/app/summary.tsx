@@ -178,6 +178,62 @@ export default function SummaryScreen() {
   );
   const closeActiveOrder = useActiveOrdersStore((s: any) => s.closeActiveOrder);
   const activeOrders = useActiveOrdersStore((s: any) => s.activeOrders);
+  
+  const performMerge = async (item: any) => {
+    try {
+      if (!context?.tableId) {
+        showToast({ type: "error", message: "Merge is only available for active Dine-In tables" });
+        return;
+      }
+      if (!item.context.tableId) {
+        showToast({ type: "error", message: "Cannot merge a takeaway order" });
+        return;
+      }
+
+      const res = await fetch(`${API_URL}/api/orders/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetTableId: context.tableId,
+          sourceTableIds: [item.context.tableId],
+          userId: user?.id,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Merge failed");
+      }
+
+      // 🚀 INSTANT SYNC AND CLEAR (Bullet 4 & 5)
+      useCartStore.getState().clearTableSession(item.context.tableId);
+      useTableStatusStore.getState().updateTableStatus(
+        item.context.tableId,
+        item.context.section,
+        item.context.tableNo,
+        "EMPTY",
+        "EMPTY",
+        0,
+        undefined,
+        0
+      );
+      await useCartStore.getState().fetchCartFromDB(context.tableId);
+      await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
+
+      showToast({
+        type: "success",
+        message: "Orders Merged Successfully",
+      });
+      setShowMergeModal(false);
+    } catch (err: any) {
+      console.error("Merge failed:", err);
+      showToast({
+        type: "error",
+        message: err.message || "Merge Failed",
+      });
+    }
+  };
+
   const updateTableStatus = useTableStatusStore(
     (s: any) => s.updateTableStatus,
   );
@@ -335,6 +391,7 @@ export default function SummaryScreen() {
   };
 
   const handleMergeBill = () => {
+    useActiveOrdersStore.getState().fetchActiveKitchenOrders();
     setShowMergeModal(true);
     setShowBillOptions(false);
   };
@@ -1760,62 +1817,28 @@ export default function SummaryScreen() {
 
             <FlatList
               data={activeOrders.filter(
-                (o: any) => o.orderId !== (displayOrderId || activeOrder?.orderId)
+                (o: any) => o.context?.orderType === "DINE_IN" && o.context?.tableId && o.orderId !== (displayOrderId || activeOrder?.orderId)
               )}
               keyExtractor={(item) => item.orderId}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.mergeItem}
                   onPress={() => {
-                    Alert.alert(
-                      "Confirm Merge",
-                      `Merge Order #${item.orderId} into this bill?`,
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Merge",
-                          onPress: async () => {
-                            try {
-                              if (!context?.tableId) {
-                                showToast({ type: "error", message: "Merge is only available for active Dine-In tables" });
-                                return;
-                              }
-                              if (!item.context.tableId) {
-                                showToast({ type: "error", message: "Cannot merge a takeaway order" });
-                                return;
-                              }
-
-                              const res = await fetch(`${API_URL}/api/orders/merge`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                  targetTableId: context.tableId,
-                                  sourceTableIds: [item.context.tableId],
-                                  userId: user?.id,
-                                }),
-                              });
-
-                              if (!res.ok) {
-                                const errData = await res.json();
-                                throw new Error(errData.error || "Merge failed");
-                              }
-
-                              showToast({
-                                type: "success",
-                                message: "Orders Merged Successfully",
-                              });
-                              setShowMergeModal(false);
-                            } catch (err: any) {
-                              console.error("Merge failed:", err);
-                              showToast({
-                                type: "error",
-                                message: err.message || "Merge Failed",
-                              });
-                            }
-                          },
-                        },
-                      ],
-                    );
+                    if (Platform.OS === 'web') {
+                      const confirmed = window.confirm(`Merge Table ${item.context.tableNo} order into Table ${context.tableNo || ""}?`);
+                      if (confirmed) {
+                        performMerge(item);
+                      }
+                    } else {
+                      Alert.alert(
+                        "Confirm Merge",
+                        `Merge Order #${item.orderId} into this bill?`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Merge", onPress: () => performMerge(item) },
+                        ],
+                      );
+                    }
                   }}
                 >
                   <View

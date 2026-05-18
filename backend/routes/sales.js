@@ -1180,6 +1180,52 @@ router.post("/save", async (req, res) => {
             io.emit("order_closed", { tableId: cleanTableId.toLowerCase(), tableNo: tableNo, orderId: displayOrderId });
           }
 
+          // 🚀 CLEANUP MERGED SOURCE TABLES AS WELL (Bullet 5)
+          try {
+            const childTablesRes = await transaction.request()
+              .input("orderNo", sql.NVarChar(50), displayOrderId)
+              .query(`
+                SELECT tm.TableId, tm.TableNumber, tm.DiningSection
+                FROM OrderMergeHistory omh
+                JOIN TableMaster tm ON omh.ChildTableNo = tm.TableNumber
+                WHERE omh.ParentOrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+              `);
+
+            if (childTablesRes.recordset && childTablesRes.recordset.length > 0) {
+              const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
+              for (const childTable of childTablesRes.recordset) {
+                const childTableId = String(childTable.TableId).replace(/^\{|\}$/g, "").trim();
+                const childTableNo = childTable.TableNumber;
+                const childSection = sectionMap[String(childTable.DiningSection)] || "SECTION_1";
+
+                console.log(`[SAVE SALE] Cleaning up merged source table: ${childTableNo} (${childTableId})`);
+                
+                await transaction.request()
+                  .input("cartId", sql.NVarChar(128), childTableId)
+                  .query("DELETE FROM [dbo].[CartItems] WHERE [CartId] = @cartId");
+
+                await transaction.request()
+                  .input("tid", sql.NVarChar(128), childTableId)
+                  .query("UPDATE [dbo].[TableMaster] SET Status = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL WHERE TableId = @tid");
+
+                if (io) {
+                  io.emit("table_status_updated", { 
+                    tableId: childTableId.toLowerCase(), 
+                    status: 0, 
+                    totalAmount: 0,
+                    startTime: null,
+                    tableNo: childTableNo,
+                    section: childSection
+                  });
+                  io.emit("cart_updated", { tableId: childTableId.toLowerCase() });
+                  io.emit("order_closed", { tableId: childTableId.toLowerCase(), tableNo: childTableNo, orderId: displayOrderId });
+                }
+              }
+            }
+          } catch (childErr) {
+            console.error("⚠️ [SAVE SALE] Merged tables cleanup failed:", childErr.message);
+          }
+
           // 🚀 GLOBAL KDS SYNC: Mark order as closed in professional tables
           await transaction.request()
             .input("orderNo", sql.NVarChar(50), displayOrderId)
