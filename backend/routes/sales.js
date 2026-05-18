@@ -1099,6 +1099,7 @@ router.post("/save", async (req, res) => {
         try {
           await transaction.request()
             .input("orderNo", sql.NVarChar(50), displayOrderId)
+            .input("totalAmt", sql.Decimal(18, 2), totalAmount)
             .query(`
               DECLARE @Section INT = 4;
               DECLARE @PriorityCode INT = NULL;
@@ -1113,10 +1114,42 @@ router.post("/save", async (req, res) => {
               ELSE IF @Section = 3 SET @PriorityCode = 3
               ELSE IF @Section = 4 SET @PriorityCode = 4
 
-              -- Move Header (History)
-              INSERT INTO RestaurantOrder (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, isOrderClosed, PriorityCode)
-              SELECT OrderId, OrderNumber, OrderDateTime, Tableno, 3, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, 1, ISNULL(PriorityCode, @PriorityCode)
-              FROM RestaurantOrderCur WHERE OrderNumber = @orderNo;
+              -- Ensure parent order has the correct final TotalAmount in Cur before moving
+              UPDATE RestaurantOrderCur SET TotalAmount = @totalAmt WHERE OrderNumber = @orderNo;
+
+              -- Move Header (History) - For Parent Order
+              IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('RestaurantOrder') AND name = 'TotalAmount')
+              BEGIN
+                 INSERT INTO RestaurantOrder (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, isOrderClosed, PriorityCode)
+                 SELECT OrderId, OrderNumber, OrderDateTime, Tableno, 3, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, 1, ISNULL(PriorityCode, @PriorityCode)
+                 FROM RestaurantOrderCur WHERE OrderNumber = @orderNo;
+              END
+              ELSE
+              BEGIN
+                 INSERT INTO RestaurantOrder (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, isOrderClosed, PriorityCode, TotalAmount)
+                 SELECT OrderId, OrderNumber, OrderDateTime, Tableno, 3, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, 1, ISNULL(PriorityCode, @PriorityCode), TotalAmount
+                 FROM RestaurantOrderCur WHERE OrderNumber = @orderNo;
+              END
+
+              -- Move Header (History) - For Child Merged Orders (so they aren't considered 'missing' bills)
+              IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('RestaurantOrder') AND name = 'TotalAmount')
+              BEGIN
+                 INSERT INTO RestaurantOrder (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, isOrderClosed, PriorityCode)
+                 SELECT r.OrderId, r.OrderNumber, r.OrderDateTime, r.Tableno, 3, r.CreatedBy, r.CreatedOn, r.MobileNo, r.BusinessUnitId, 1, ISNULL(r.PriorityCode, @PriorityCode)
+                 FROM RestaurantOrderCur r
+                 INNER JOIN OrderMergeHistory omh ON r.OrderId = omh.ChildOrderId
+                 WHERE omh.ParentOrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                   AND NOT EXISTS (SELECT 1 FROM RestaurantOrder ro WHERE ro.OrderId = r.OrderId);
+              END
+              ELSE
+              BEGIN
+                 INSERT INTO RestaurantOrder (OrderId, OrderNumber, OrderDateTime, Tableno, StatusCode, CreatedBy, CreatedOn, MobileNo, BusinessUnitId, isOrderClosed, PriorityCode, TotalAmount)
+                 SELECT r.OrderId, r.OrderNumber, r.OrderDateTime, r.Tableno, 3, r.CreatedBy, r.CreatedOn, r.MobileNo, r.BusinessUnitId, 1, ISNULL(r.PriorityCode, @PriorityCode), 0
+                 FROM RestaurantOrderCur r
+                 INNER JOIN OrderMergeHistory omh ON r.OrderId = omh.ChildOrderId
+                 WHERE omh.ParentOrderId = (SELECT TOP 1 OrderId FROM RestaurantOrderCur WHERE OrderNumber = @orderNo)
+                   AND NOT EXISTS (SELECT 1 FROM RestaurantOrder ro WHERE ro.OrderId = r.OrderId);
+              END
 
               -- Move Details (History) with safety for Discount columns
               INSERT INTO RestaurantOrderDetail (
