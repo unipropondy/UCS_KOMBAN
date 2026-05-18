@@ -527,28 +527,38 @@ initializeSocketListeners: () => {
     set({ activeOrders: filtered });
   });
 
-  // 🚀 TABLE MAP SYNC: Update table colors and subtotals across all devices instantly
     socket.on("table_status_updated", (data) => {
       console.log("📊 [ActiveOrdersStore] Socket: table_status_updated", data);
       const { useTableStatusStore } = require("./tableStatusStore");
       
+      const rawStatus = data.status !== undefined ? data.status : data.Status;
       const statusMap: Record<number, any> = {
-        0: 'EMPTY', 1: 'SENT', 2: 'BILL_REQUESTED', 3: 'HOLD', 4: 'OVERTIME', 5: 'LOCKED'
+        0: 'EMPTY', 1: 'SENT', 2: 'BILL_REQUESTED', 3: 'HOLD', 4: 'SENT', 5: 'LOCKED'
       };
-      const statusStr = statusMap[data.Status] || data.Status || 'SENT';
+      const statusStr = statusMap[rawStatus] || rawStatus || 'EMPTY';
+
+      const tableId = data.tableId || data.TableId || data.tableid;
+      const section = data.section || data.Section;
+      const tableNo = data.tableNo || data.TableNo;
+      const orderId = data.currentOrderId || data.CurrentOrderId || data.orderId || "SYNC";
+      const startTime = data.startTime || data.StartTime;
+      const lockedByName = data.lockedByName || data.LockedByName;
+      const totalAmount = data.totalAmount !== undefined ? data.totalAmount : data.TotalAmount;
+      const isHoldOvertime = data.isHoldOvertime !== undefined ? data.isHoldOvertime : data.IsHoldOvertime;
+      const modifiedOn = data.modifiedOn || data.ModifiedOn;
 
       useTableStatusStore.getState().updateTableStatus(
-        data.tableId,
-        data.section,
-        data.tableNo,
-        data.CurrentOrderId,
+        tableId,
+        section,
+        tableNo,
+        orderId,
         statusStr,
-        data.StartTime,
-        data.lockedByName,
-        data.TotalAmount,
+        startTime,
+        lockedByName,
+        totalAmount,
         true, // isExternal
-        data.isHoldOvertime,
-        data.modifiedOn || data.ModifiedOn
+        isHoldOvertime,
+        modifiedOn
       );
     });
 
