@@ -1048,19 +1048,7 @@ export default function Category() {
             </TouchableOpacity>
           )}
 
-          {/* QR Order Button */}
-          <TouchableOpacity
-            style={styles.headerActionBtn}
-            onPress={() => setIsQRModalVisible(true)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="qr-code-outline" size={20} color={Theme.warning} />
-            {isTablet && isLandscape && (
-              <Text style={[styles.headerActionText, { color: Theme.warning }]}>
-                QR Order
-              </Text>
-            )}
-          </TouchableOpacity>
+
 
           {/* NEW CONSOLIDATED MENU BUTTON */}
           <TouchableOpacity
