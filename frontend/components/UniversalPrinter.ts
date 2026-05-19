@@ -781,7 +781,7 @@ private static async printThermalReceipt(
     text += '[L]------------------------------------------------\n';
     
     // Items Header
-    text += '[L]ITEM                        QTY    PRICE    TOTAL\n';
+    text += '[L]ITEM                        QTY   PRICE    TOTAL\n';
     text += '[L]------------------------------------------------\n';
     
     const printItems = (saleData.items || []).filter((i: any) => i.status !== 'VOIDED');
