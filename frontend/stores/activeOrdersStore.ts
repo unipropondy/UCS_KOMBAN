@@ -151,17 +151,19 @@ const storeCreator: StateCreator<
     existingOrder.items = [...existingOrder.items];
 
     cartItems.forEach((cartItem) => {
-      // If item already exists with the same status or is just NEW, we might merge
-      // But for KDS append, we usually want to add them as SENT if they are new batches
+      const cleanLineItemId = String(cartItem.lineItemId || "").toLowerCase();
       const itemIndex = existingOrder.items.findIndex(
-        (i) => i.lineItemId === cartItem.lineItemId && (i.status === "NEW" || i.status === cartItem.status)
+        (i) => String(i.lineItemId || "").toLowerCase() === cleanLineItemId
       );
 
       if (itemIndex > -1) {
+        const existingItem = existingOrder.items[itemIndex];
         existingOrder.items[itemIndex] = {
-          ...existingOrder.items[itemIndex],
-          qty: existingOrder.items[itemIndex].qty + cartItem.qty,
-          status: cartItem.status || existingOrder.items[itemIndex].status
+          ...existingItem,
+          qty: cartItem.qty || existingItem.qty,
+          status: existingItem.status, // Keep the existing KDS status unchanged
+          note: cartItem.note || existingItem.note || "",
+          modifiers: cartItem.modifiers?.length ? cartItem.modifiers : (existingItem.modifiers || []),
         };
       } else {
         existingOrder.items.push({
