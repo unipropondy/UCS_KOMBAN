@@ -12,7 +12,7 @@ const SPICY_KEYS = ["spicy", "Spicy"];
 const SALT_KEYS = ["salt", "Salt"];
 const OIL_KEYS = ["oil", "Oil"];
 const SUGAR_KEYS = ["sugar", "Sugar"];
- 
+
 const toGuidOrNull = (value) => {
   if (!value) return null;
   const s = String(value).trim().replace(/^\{|\}$/g, "");
@@ -35,9 +35,9 @@ function resolveItemNote(item = {}) { return resolveItemTextField(item, NOTE_KEY
 function resolveItemTakeaway(item = {}) {
   const result = resolveItemTextField(item, TAKEAWAY_KEYS);
   const val = result.value.toLowerCase();
-  return { 
-    hasExplicitTakeaway: result.hasExplicitValue, 
-    value: result.hasExplicitValue ? (val === "true" || val === "1") : false 
+  return {
+    hasExplicitTakeaway: result.hasExplicitValue,
+    value: result.hasExplicitValue ? (val === "true" || val === "1") : false
   };
 }
 
@@ -77,7 +77,7 @@ async function getOrGenerateOrderId(req, tableId) {
     const quickCheck = await pool.request()
       .input("tid", sql.UniqueIdentifier, cleanId)
       .query("SELECT CurrentOrderId FROM TableMaster WHERE TableId = @tid");
-    
+
     let existingId = quickCheck.recordset[0]?.CurrentOrderId;
     if (existingId && existingId !== "NEW" && existingId !== "#NEW" && !existingId.startsWith("TEMP-") && existingId.length > 5) {
       console.log(`✅ [Cart] Reusing existing OrderID: ${existingId}`);
@@ -90,9 +90,9 @@ async function getOrGenerateOrderId(req, tableId) {
     const istDate = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
     const todayStr = istDate.toISOString().split('T')[0];
     const datePrefix = todayStr.replace(/-/g, '');
-    
+
     let dailySequence = 1;
-    
+
     // 3. ATOMIC ATTEMPT: Use MERGE or Transaction for Sequence
     const seqResult = await pool.request()
       .input("RestId", sql.UniqueIdentifier, String(currentBizId))
@@ -107,19 +107,19 @@ async function getOrGenerateOrderId(req, tableId) {
         WHERE RestaurantId = @RestId AND SequenceDate = @Today;
         COMMIT TRANSACTION;
       `);
-    
+
     dailySequence = seqResult.recordset[0]?.LastNumber || 1;
 
     const displayOrderId = `${datePrefix}-${String(dailySequence).padStart(4, '0')}`;
-    
+
     // 4. Atomic Update of Table Status
     await pool.request()
       .input("tid", sql.VarChar(50), cleanId)
       .input("oid", sql.NVarChar(50), displayOrderId)
       .query("UPDATE TableMaster SET CurrentOrderId = @oid, StartTime = ISNULL(StartTime, GETDATE()) WHERE TableId = @tid");
-    
+
     return displayOrderId;
-  } catch (err) { 
+  } catch (err) {
     console.error("🔥 [Critical] OrderID Generation Failed:", err.message);
     // FALLBACK: Use count as emergency instead of returning "NEW"
     const istDate = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
@@ -242,9 +242,9 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
     const modifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
     const modsJSON = JSON.stringify(modifiers);
 
-    const p_id = `id${idx}`, p_dish = `dish${idx}`, p_qty = `qty${idx}`, p_cost = `cost${idx}`, 
-          p_status = `st${idx}`, p_name = `name${idx}`, p_note = `note${idx}`, p_mods = `mods${idx}`, 
-          p_tw = `tw${idx}`;
+    const p_id = `id${idx}`, p_dish = `dish${idx}`, p_qty = `qty${idx}`, p_cost = `cost${idx}`,
+      p_status = `st${idx}`, p_name = `name${idx}`, p_note = `note${idx}`, p_mods = `mods${idx}`,
+      p_tw = `tw${idx}`;
 
     itemRequest.input(p_id, sql.UniqueIdentifier, lineItemId);
     itemRequest.input(p_dish, sql.UniqueIdentifier, finalProdId);
@@ -280,15 +280,15 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
 
     const modItems = [...modifiers];
     if (noteInfo.value) modItems.push({ ModifierId: '00000000-0000-0000-0000-000000000001', ModifierName: "INSTR: " + noteInfo.value, Price: 0, qty: item.qty || 1 });
-    
+
     if (modItems.length > 0) {
       batchSql += `INSERT INTO RestaurantmodifierdetailCur (OrderDetailId, OrderId, DishId, ModifierId, Quantity, Amount, ModifierName, CreatedBy, CreatedOn) VALUES `;
       modItems.forEach((mod, midx) => {
         const pm_id = `mId${idx}_${midx}`, pm_qty = `mQty${idx}_${midx}`, pm_amt = `mAmt${idx}_${midx}`, pm_name = `mName${idx}_${midx}`;
-        
+
         // 🛡️ SAFE GUID: Ensure we have a valid-looking GUID or use a dummy
-        const safeModId = (mod.ModifierId && mod.ModifierId.length > 30) 
-          ? mod.ModifierId 
+        const safeModId = (mod.ModifierId && mod.ModifierId.length > 30)
+          ? mod.ModifierId
           : '00000000-0000-0000-0000-000000000001';
 
         itemRequest.input(pm_id, sql.UniqueIdentifier, safeModId);
@@ -302,8 +302,8 @@ async function syncToProfessionalTables(transaction, tableId, displayOrderId, it
 
   // 🚀 OPTIMIZATION 3: Smart Removal in the same batch
   const incomingIds = items.map(i => i.lineItemId).filter(id => !!id && id.length > 5);
-  const notInClause = incomingIds.length > 0 
-    ? `AND OrderDetailId NOT IN (${incomingIds.map(id => `'${id}'`).join(',')})` 
+  const notInClause = incomingIds.length > 0
+    ? `AND OrderDetailId NOT IN (${incomingIds.map(id => `'${id}'`).join(',')})`
     : "";
 
   console.log(`[DB] Syncing Order ${cleanOrderNo} (${orderGuid}): Processing ${items.length} items, keeping ${incomingIds.length} IDs.`);
@@ -398,10 +398,10 @@ async function syncTableStatus(req, tableId) {
   if (updated) {
     const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
     const cleanOrderId = updated.CurrentOrderId || "EMPTY";
-    
+
     console.log(`[TRACE] [${Date.now()}] [SOCKET_EMIT] table_status_updated | Table: ${cleanId} | Status: ${updated.Status}`);
-    req.app.get("io")?.emit("table_status_updated", { 
-      tableId: cleanId.toLowerCase(), 
+    req.app.get("io")?.emit("table_status_updated", {
+      tableId: cleanId.toLowerCase(),
       status: Number(updated.Status),
       totalAmount: Number(updated.TotalAmount) || 0,
       startTime: updated.StartTime,
@@ -425,7 +425,7 @@ router.post("/save-cart", async (req, res) => {
     const now = Date.now();
 
     console.log(`[TRACE] [${now}] [SAVE-CART] Table: ${cleanId} | Items: ${items?.length || 0} | Version: ${version || 'NONE'} | Update: ${lastUpdate || 'NONE'}`);
-    
+
     // 🚀 UNIFIED ID: Only generate a professional ID if we actually have items to save
     // 🚀 UNIFIED ID: Use existing orderId if available, even for empty carts
     let currentOrderId = orderId;
@@ -472,7 +472,7 @@ router.post("/save-cart", async (req, res) => {
       // 🚀 ALWAYS SYNC: Even if items is empty, we need to run syncToProfessionalTables 
       // to ensure any existing items in the DB are voided/cleaned up.
       await syncToProfessionalTables(transaction, cleanId, currentOrderId, items || [], userId);
-      
+
       // 🚀 CRITICAL: Update TableMaster INSIDE the same transaction 
       await transaction.request()
         .input("tid", sql.VarChar(50), cleanId)
@@ -488,20 +488,20 @@ router.post("/save-cart", async (req, res) => {
         `);
 
       await transaction.commit();
-      
+
       res.json({ success: true, orderId: currentOrderId });
-      
+
       // 🔥 LIVE SYNC: Notify all other devices that this table's cart has changed
       const io = req.app.get("io");
       if (io) {
         io.emit("cart_updated", { tableId: cleanId.toLowerCase(), orderId: currentOrderId });
       }
 
-      syncTableStatus(req, cleanId).catch(() => {});
-    } catch (e) { 
-      if (transaction._isStarted) await transaction.rollback(); 
+      syncTableStatus(req, cleanId).catch(() => { });
+    } catch (e) {
+      if (transaction._isStarted) await transaction.rollback();
       console.error("❌ SaveCart SQL Error:", e.message);
-      res.status(500).json({ error: "DB_ERROR: " + e.message }); 
+      res.status(500).json({ error: "DB_ERROR: " + e.message });
     }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -570,7 +570,7 @@ router.post("/send", async (req, res) => {
         `);
 
       await transaction.commit();
-      
+
       res.json({ success: true, orderId: finalOrderId });
 
       // 🔥 REAL-TIME BROADCAST: Notify KDS and all other Waiter devices
@@ -600,11 +600,11 @@ router.post("/send", async (req, res) => {
       }
 
       // 5. Refresh totals and notify instantly
-      syncTableStatus(req, cleanId).catch(() => {});
-    } catch (e) { 
-      await transaction.rollback(); 
+      syncTableStatus(req, cleanId).catch(() => { });
+    } catch (e) {
+      await transaction.rollback();
       console.error("❌ SendOrder SQL Error:", e.message);
-      res.status(500).json({ error: "SEND_ERROR: " + e.message }); 
+      res.status(500).json({ error: "SEND_ERROR: " + e.message });
     }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -622,14 +622,14 @@ router.get("/cart/:tableId", async (req, res) => {
     const tableInfo = await pool.request()
       .input("tid", sql.VarChar(50), cleanId)
       .query("SELECT TableNumber, CurrentOrderId FROM TableMaster WHERE TableId = @tid");
-    
+
     const tableRow = tableInfo.recordset[0];
     const tableNumber = tableRow?.TableNumber;
     const currentOrderId = tableRow?.CurrentOrderId;
 
     // Fetch items: prioritize by CurrentOrderId, fall back to open order by TableNumber
     // 💡 LIVE SYNC: Allow TEMP- IDs so other devices can see the draft cart items!
-    const isRealOrderId = currentOrderId && 
+    const isRealOrderId = currentOrderId &&
       currentOrderId !== 'PENDING' &&
       currentOrderId !== 'NEW';
 
@@ -688,7 +688,7 @@ router.post("/cancel", async (req, res) => {
     const { orderId, tableId, reason, userId, userName } = req.body;
     const pool = await poolPromise;
     const cleanTid = String(tableId).replace(/^\{|\}$/g, "").trim();
-    
+
     // 1. Fetch Order Data for Reporting
     const orderData = await pool.request()
       .input("oid", sql.NVarChar(100), orderId)
@@ -699,7 +699,7 @@ router.post("/cancel", async (req, res) => {
         LEFT JOIN TableMaster tm ON h.Tableno = tm.TableNumber
         WHERE h.OrderNumber = @oid AND (h.isOrderClosed = 0 OR h.isOrderClosed IS NULL)
       `);
-    
+
     const header = orderData.recordset[0];
     if (!header) {
       return res.status(404).json({ error: "Order not found or already closed" });
@@ -715,7 +715,7 @@ router.post("/cancel", async (req, res) => {
         LEFT JOIN CategoryMaster cm ON dg.CategoryId = cm.CategoryId
         WHERE d.OrderId = @orderId
       `);
-    
+
     const items = itemsData.recordset;
     const subTotal = items.reduce((sum, item) => sum + (item.ActualAmount || 0), 0);
     const voidQty = items.reduce((sum, item) => sum + (item.Quantity || 0), 0);
@@ -724,7 +724,7 @@ router.post("/cancel", async (req, res) => {
     await transaction.begin();
     try {
       const settlementId = crypto.randomUUID();
-      
+
       // 2. Insert into SettlementHeader (Cancelled Status)
       await transaction.request()
         .input("sid", sql.UniqueIdentifier, settlementId)
@@ -823,15 +823,15 @@ router.post("/cancel", async (req, res) => {
         .query("UPDATE TableMaster SET Status = 0, TotalAmount = 0, StartTime = NULL, CurrentOrderId = NULL, ModifiedOn = GETDATE() WHERE TableId = @tid");
 
       await transaction.commit();
-      
+
       await syncTableStatus(req, cleanTid);
       req.app.get("io")?.emit("order_closed", { tableId: cleanTid, orderId: orderId });
-      
+
       res.json({ success: true });
-    } catch (e) { 
-      await transaction.rollback(); 
+    } catch (e) {
+      await transaction.rollback();
       console.error("❌ Cancel Error:", e.message);
-      res.status(500).json({ error: e.message }); 
+      res.status(500).json({ error: e.message });
     }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -841,7 +841,7 @@ router.post("/complete", async (req, res) => {
     const { tableId, userId } = req.body;
     const cleanId = tableId.replace(/^\{|\}$/g, "").trim();
     const pool = await poolPromise;
-    
+
     // Final atomic update: Close the professional order and release the table
     await pool.request()
       .input("tid", sql.VarChar(50), cleanId)
@@ -854,22 +854,22 @@ router.post("/complete", async (req, res) => {
       `);
 
     const updated = await syncTableStatus(req, cleanId);
-    
+
     // 🔥 UNIFIED SIGNAL: Use order_status_update for consistency
     const io = req.app.get("io");
     if (io) {
       const lid = cleanId.toLowerCase();
       io.emit("order_closed", { tableId: lid });
-      io.emit("order_status_update", { 
-        tableId: lid, 
+      io.emit("order_status_update", {
+        tableId: lid,
         action: "CLOSE",
-        orderId: updated?.CurrentOrderId 
+        orderId: updated?.CurrentOrderId
       });
     }
     res.json({ success: true, ...updated });
-  } catch (err) { 
+  } catch (err) {
     console.error("❌ Complete Error:", err.message);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -902,7 +902,7 @@ router.post("/checkout", async (req, res) => {
     const { tableId } = req.body;
     const cleanId = tableId.replace(/^\{|\}$/g, "").trim();
     const pool = await poolPromise;
-    
+
     // Step 1: Move table to Payment Pending (Status 2) and mark items as SERVED (4)
     await pool.request()
       .input("tid", sql.UniqueIdentifier, cleanId)
@@ -932,15 +932,15 @@ router.post("/checkout", async (req, res) => {
       `);
 
     const updated = await syncTableStatus(req, cleanId);
-    
+
     // 🔥 KDS & GLOBAL SYNC: Harmonized signals
     const io = req.app.get("io");
     if (io) {
       const lid = cleanId.toLowerCase();
-      io.emit("order_closed", { 
-        tableId: lid, 
+      io.emit("order_closed", {
+        tableId: lid,
         tableNo: updated?.tableNo,
-        section: updated?.section 
+        section: updated?.section
       });
       io.emit("order_status_update", {
         tableId: lid,
@@ -950,9 +950,9 @@ router.post("/checkout", async (req, res) => {
     }
 
     res.json({ success: true, ...updated });
-  } catch (err) { 
+  } catch (err) {
     console.error("❌ Checkout Error:", err.message);
-    res.status(500).json({ error: err.message }); 
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -992,9 +992,9 @@ router.post("/remove-item", async (req, res) => {
           END
         `);
       await transaction.commit();
-      
+
       // 🚀 Refresh total immediately
-      syncTableStatus(req, tableId).catch(() => {});
+      syncTableStatus(req, tableId).catch(() => { });
 
       req.app.get("io")?.emit("cart_updated", { tableId: String(tableId || "").toLowerCase() });
       res.json({ success: true });
@@ -1007,24 +1007,24 @@ router.post("/update-item-status", async (req, res) => {
     const { lineItemId, status, tableId } = req.body;
     const pool = await poolPromise;
     const statusMap = { 'NEW': 1, 'SENT': 2, 'READY': 3, 'SERVED': 4, 'HOLD': 5, 'VOIDED': 0 };
-    
+
     // Fetch orderNumber first so we can emit it
     const orderRes = await pool.request()
       .input("id", sql.UniqueIdentifier, lineItemId)
       .query("SELECT h.OrderNumber FROM RestaurantOrderDetailCur d JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId WHERE d.OrderDetailId = @id");
-    
+
     const orderId = orderRes.recordset[0]?.OrderNumber;
 
     await pool.request()
       .input("id", sql.VarChar(50), lineItemId)
       .input("code", sql.Int, statusMap[status] || 2)
       .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id");
-    
-    req.app.get("io")?.emit("item_status_updated", { 
-      lineItemId, 
-      status, 
-      tableId: String(tableId || "").toLowerCase(), 
-      orderId 
+
+    req.app.get("io")?.emit("item_status_updated", {
+      lineItemId,
+      status,
+      tableId: String(tableId || "").toLowerCase(),
+      orderId
     });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1067,24 +1067,24 @@ router.get("/active-kitchen", async (req, res) => {
         const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
         const normalizedSection = sectionMap[String(row.DiningSection)] || row.DiningSection || "";
 
-        orders[row.orderId] = { 
-          orderId: row.orderId, 
-          context: { 
+        orders[row.orderId] = {
+          orderId: row.orderId,
+          context: {
             orderType: isTakeaway ? 'TAKEAWAY' : 'DINE_IN',
             tableId: row.TableId ? String(row.TableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : undefined,
             tableNo: isTakeaway ? null : String(row.tableNo).trim(),
             section: normalizedSection,
             takeawayNo: isTakeaway ? (row.tableNo === 'TAKEAWAY' ? row.orderId.slice(-4) : String(row.tableNo).trim()) : null
-          }, 
-          items: [], 
-          createdAt: Date.now() - (row.elapsedSeconds * 1000) 
+          },
+          items: [],
+          createdAt: Date.now() - (row.elapsedSeconds * 1000)
         };
       }
-      const statusMap = { 0:'VOIDED', 1:'NEW', 2:'SENT', 3:'READY', 4:'SERVED', 5:'HOLD' };
-      orders[row.orderId].items.push({ 
-        ...row, 
-        status: statusMap[row.StatusCode], 
-        modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : [] 
+      const statusMap = { 0: 'VOIDED', 1: 'NEW', 2: 'SENT', 3: 'READY', 4: 'SERVED', 5: 'HOLD' };
+      orders[row.orderId].items.push({
+        ...row,
+        status: statusMap[row.StatusCode],
+        modifiers: row.ModifiersJSON ? JSON.parse(row.ModifiersJSON) : []
       });
     });
     res.json({ serverTime: Date.now(), orders: Object.values(orders) });
@@ -1128,24 +1128,24 @@ router.post("/merge", async (req, res) => {
 
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
-    
+
     try {
       console.log(`[MERGE START] Initiating merge for targetTableId: ${cleanTargetId}`);
-      
+
       // 0. Ensure target table exists and has a CurrentOrderId
       console.log(`[MERGE STEP 1] Checking target table status...`);
       const targetCheck = await transaction.request()
         .input("tid", sql.UniqueIdentifier, cleanTargetId)
         .query("SELECT TableNumber, CurrentOrderId FROM TableMaster WHERE TableId = @tid");
-      
+
       if (targetCheck.recordset.length === 0) {
         throw new Error("Target table not found");
       }
-      
+
       const targetTableNo = targetCheck.recordset[0].TableNumber;
       const targetOrderId = targetCheck.recordset[0].CurrentOrderId;
       console.log(`[MERGE STEP 1 SUCCESS] Target Table: ${targetTableNo}, Active OrderNo: ${targetOrderId}`);
-      
+
       if (!targetOrderId || targetOrderId === "NEW") {
         throw new Error("Target table has no active order. Add at least one item first.");
       }
@@ -1162,7 +1162,7 @@ router.post("/merge", async (req, res) => {
       console.log(`[MERGE STEP 2 SUCCESS] Target Order GUID: ${targetOrderGuid}`);
 
       const io = req.app.get("io");
-      
+
       for (const sourceTableId of sourceTableIds) {
         const cleanSourceId = String(sourceTableId).replace(/^\{|\}$/g, "").trim();
         if (cleanSourceId === cleanTargetId) {
@@ -1174,7 +1174,7 @@ router.post("/merge", async (req, res) => {
         const sourceCheck = await transaction.request()
           .input("tid", sql.UniqueIdentifier, cleanSourceId)
           .query("SELECT TableNumber, CurrentOrderId FROM TableMaster WHERE TableId = @tid");
-        
+
         if (sourceCheck.recordset.length === 0) {
           console.log(`[MERGE LOOP ERROR] Source table not found: ${cleanSourceId}`);
           continue;
