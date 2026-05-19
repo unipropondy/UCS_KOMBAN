@@ -54,7 +54,6 @@ const URGENCY_UI: Record<UrgencyLevel, { primary: string; label: string; icon: k
   warn: { primary: Theme.warning, label: "RUNNING LONG", icon: "time-outline" },
   critical: { primary: Theme.danger, label: "OVERDUE", icon: "alert-circle-outline" },
 };
-
 // Per-card component so each card can track its own scroll state
 const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, groups, now }: any) {
   const [hasMore, setHasMore] = useState(false);
@@ -63,7 +62,6 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
 
   const getTs = (val: any) => {
     if (!val) return 0;
-    // If it's already a number (from our store adjustment), use it directly
     if (typeof val === 'number') return val;
     const d = new Date(val);
     const ts = d.getTime();
@@ -74,20 +72,29 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
   const itemsMaxTs = (item.items && item.items.length > 0)
     ? Math.max(...item.items.map((i: any) => getTs(i.sentAt || item.createdAt)))
     : 0;
-  
-  // Use the items' latest sent time, or the order's creation time as a fallback.
-  // We NO LONGER fallback to 'now' here, as that causes 0:00 stuck timers.
   const latestSent = itemsMaxTs || itemTs;
-  
-  // If latestSent is 0 or invalid, we show 0:00 but don't reset it to 'now'
-  const isValidTs = latestSent > 1000000; 
+  const isValidTs = latestSent > 1000000;
   const elapsed = isValidTs ? Math.max(0, now - latestSent) : 0;
-  
   const minutes = Math.floor(elapsed / 60000);
   const seconds = Math.floor((elapsed % 60000) / 1000);
   const urgency = getUrgency(minutes);
   const ui = URGENCY_UI[urgency];
   const timerOpacity = urgency === "critical" ? pulseAnim : 1;
+
+  // 🚀 LIVE ITEM COUNTS — derived from pre-computed groups, zero extra API calls
+  const { totalQty, totalUniqueDishes } = useMemo(() => {
+    let qty = 0;
+    let dishes = 0;
+    Object.values(groups || {}).forEach((catItems: any) => {
+      catItems.forEach((i: any) => {
+        if (i.status !== 'VOIDED' && !String(i.note || '').toUpperCase().includes('VOID')) {
+          qty += Number(i.qty) || 0;
+          dishes++;
+        }
+      });
+    });
+    return { totalQty: qty, totalUniqueDishes: dishes };
+  }, [groups]);
 
   const checkMore = () => {
     setHasMore(contentH.current > viewH.current + 5);
@@ -107,7 +114,7 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
               : `Takeaway • #${item.context.takeawayNo || item.orderId.slice(-4)}`}
           </Text>
           <Animated.Text style={[styles.timer, { color: ui.primary, opacity: timerOpacity }]}>
-            {minutes}:{seconds.toString().padStart(2, "0")}
+            {minutes}:{seconds.toString().padStart(2, "00")}
           </Animated.Text>
         </View>
         <View style={styles.headerRow}>
@@ -117,7 +124,23 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
             <Text style={[styles.statusBadgeText, { color: ui.primary }]}>{ui.label}</Text>
           </View>
         </View>
+        {/* 🍽️ LIVE ITEM COUNT BADGES */}
+        <View style={styles.itemCountRow}>
+          <View style={styles.itemCountBadge}>
+            <Ionicons name="layers-outline" size={11} color={ui.primary} />
+            <Text style={[styles.itemCountText, { color: ui.primary }]}>
+              {totalQty} item{totalQty !== 1 ? 's' : ''}
+            </Text>
+          </View>
+          <View style={styles.itemCountBadgeMuted}>
+            <Ionicons name="restaurant-outline" size={11} color="#666" />
+            <Text style={styles.itemCountMutedText}>
+              {totalUniqueDishes} dish{totalUniqueDishes !== 1 ? 'es' : ''}
+            </Text>
+          </View>
+        </View>
       </View>
+
       <View style={styles.divider} />
       <View style={{ flex: 1 }}>
         <ScrollView
@@ -211,8 +234,12 @@ const OrderCard = React.memo(function OrderCard({ item, cardHeight, pulseAnim, g
     </Pressable>
   );
 }, (prev, next) => {
+  // Also check total qty sum so badge updates when item quantities change
+  const prevQty = prev.item.items.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0);
+  const nextQty = next.item.items.reduce((s: number, i: any) => s + (Number(i.qty) || 0), 0);
   return (
     prev.item.orderId === next.item.orderId &&
+    prevQty === nextQty &&
     prev.item.items.length === next.item.items.length &&
     prev.groups === next.groups &&
     Math.floor(prev.now / 1000) === Math.floor(next.now / 1000)
@@ -656,6 +683,48 @@ const styles = StyleSheet.create({
   },
   statusBadgeText: { fontSize: 9, fontFamily: Fonts.black },
   divider: { height: 1, backgroundColor: Theme.border, marginHorizontal: 15 },
+
+  // Item count badges
+  itemCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    flexWrap: 'wrap',
+  },
+  itemCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: Theme.primary + '12',
+    borderWidth: 1,
+    borderColor: Theme.primary + '30',
+  },
+  itemCountText: {
+    fontSize: 11,
+    fontFamily: Fonts.black,
+    letterSpacing: 0.3,
+  },
+  itemCountBadgeMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: '#F0F0F0',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  itemCountMutedText: {
+    fontSize: 11,
+    fontFamily: Fonts.black,
+    color: '#666',
+    letterSpacing: 0.3,
+  },
 
   itemsScroll: { flex: 1, paddingHorizontal: 15 },
   categorySection: { marginTop: 6 },
