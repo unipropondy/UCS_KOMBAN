@@ -3,11 +3,9 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -86,6 +84,8 @@ export default function SummaryScreen() {
   const [showBillOptions, setShowBillOptions] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<any | null>(null);
+  const [isMerging, setIsMerging] = useState(false);
   const [splitQuantities, setSplitQuantities] = useState<
     Record<string, number>
   >({});
@@ -179,7 +179,10 @@ export default function SummaryScreen() {
   const closeActiveOrder = useActiveOrdersStore((s: any) => s.closeActiveOrder);
   const activeOrders = useActiveOrdersStore((s: any) => s.activeOrders);
   
-  const performMerge = async (item: any) => {
+  const performMerge = async () => {
+    if (isMerging || !mergeTarget) return; // Guard against double-click
+    const item = mergeTarget;
+    setIsMerging(true);
     try {
       if (!context?.tableId) {
         showToast({ type: "error", message: "Merge is only available for active Dine-In tables" });
@@ -205,7 +208,7 @@ export default function SummaryScreen() {
         throw new Error(errData.error || "Merge failed");
       }
 
-      // 🚀 INSTANT SYNC AND CLEAR (Bullet 4 & 5)
+      // 🚀 INSTANT SYNC AND CLEAR
       useCartStore.getState().clearTableSession(item.context.tableId);
       useTableStatusStore.getState().updateTableStatus(
         item.context.tableId,
@@ -220,17 +223,15 @@ export default function SummaryScreen() {
       await useCartStore.getState().fetchCartFromDB(context.tableId);
       await useActiveOrdersStore.getState().fetchActiveKitchenOrders();
 
-      showToast({
-        type: "success",
-        message: "Orders Merged Successfully",
-      });
+      showToast({ type: "success", message: "Orders Merged Successfully" });
+      setMergeTarget(null);
       setShowMergeModal(false);
     } catch (err: any) {
       console.error("Merge failed:", err);
-      showToast({
-        type: "error",
-        message: err.message || "Merge Failed",
-      });
+      showToast({ type: "error", message: err.message || "Merge Failed" });
+      setMergeTarget(null);
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -1823,23 +1824,7 @@ export default function SummaryScreen() {
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.mergeItem}
-                  onPress={() => {
-                    if (Platform.OS === 'web') {
-                      const confirmed = window.confirm(`Merge Table ${item.context.tableNo} order into Table ${context.tableNo || ""}?`);
-                      if (confirmed) {
-                        performMerge(item);
-                      }
-                    } else {
-                      Alert.alert(
-                        "Confirm Merge",
-                        `Merge Order #${item.orderId} into this bill?`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Merge", onPress: () => performMerge(item) },
-                        ],
-                      );
-                    }
-                  }}
+                  onPress={() => setMergeTarget(item)}
                 >
                   <View
                     style={[
@@ -1887,6 +1872,57 @@ export default function SummaryScreen() {
                 </View>
               )}
             />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ✅ CUSTOM MERGE CONFIRMATION MODAL - No window.confirm, APK + Web safe */}
+      <Modal
+        transparent
+        visible={!!mergeTarget}
+        animationType="fade"
+        onRequestClose={() => { if (!isMerging) setMergeTarget(null); }}
+      >
+        <View style={styles.mergeConfirmOverlay}>
+          <View style={styles.mergeConfirmBox}>
+            <View style={styles.mergeConfirmIconWrap}>
+              <Ionicons name="git-merge-outline" size={32} color={Theme.primary} />
+            </View>
+            <Text style={styles.mergeConfirmTitle}>Confirm Merge</Text>
+            <Text style={styles.mergeConfirmDesc}>
+              Merge{" "}
+              <Text style={{ color: Theme.primary, fontFamily: Fonts.black }}>
+                Table {mergeTarget?.context?.tableNo}
+              </Text>
+              {" "}order into{" "}
+              <Text style={{ color: Theme.primary, fontFamily: Fonts.black }}>
+                Table {context?.tableNo || "current"}
+              </Text>
+              ?{"\n"}All items will be combined.
+            </Text>
+            <View style={styles.mergeConfirmBtnRow}>
+              <TouchableOpacity
+                style={[styles.mergeConfirmBtn, styles.mergeConfirmBtnCancel]}
+                onPress={() => setMergeTarget(null)}
+                disabled={isMerging}
+              >
+                <Text style={styles.mergeConfirmBtnCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mergeConfirmBtn, styles.mergeConfirmBtnPrimary, isMerging && { opacity: 0.7 }]}
+                onPress={performMerge}
+                disabled={isMerging}
+              >
+                {isMerging ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="git-merge-outline" size={16} color="#fff" />
+                    <Text style={styles.mergeConfirmBtnPrimaryText}>Merge Now</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2594,5 +2630,82 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+
+  // ── Custom Merge Confirm Modal ──────────────────────────────────────────
+  mergeConfirmOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  mergeConfirmBox: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    ...Theme.shadowLg,
+  },
+  mergeConfirmIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: Theme.primaryLight,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: Theme.primaryBorder,
+  },
+  mergeConfirmTitle: {
+    fontFamily: Fonts.black,
+    fontSize: 22,
+    color: Theme.textPrimary,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  mergeConfirmDesc: {
+    fontFamily: Fonts.medium,
+    fontSize: 15,
+    color: Theme.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  mergeConfirmBtnRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  mergeConfirmBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    minHeight: 50,
+  },
+  mergeConfirmBtnCancel: {
+    backgroundColor: Theme.bgMuted,
+    borderWidth: 1,
+    borderColor: Theme.border,
+  },
+  mergeConfirmBtnCancelText: {
+    fontFamily: Fonts.black,
+    fontSize: 15,
+    color: Theme.textPrimary,
+  },
+  mergeConfirmBtnPrimary: {
+    backgroundColor: Theme.primary,
+  },
+  mergeConfirmBtnPrimaryText: {
+    fontFamily: Fonts.black,
+    fontSize: 15,
+    color: "#fff",
   },
 });
