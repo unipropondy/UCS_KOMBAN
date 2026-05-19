@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, StateCreator } from "zustand";
 import { Platform } from "react-native";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -48,6 +48,7 @@ const normalizeKitchenItem = (item: any) => {
       : [];
   return {
     ...item,
+    lineItemId: item.lineItemId ? String(item.lineItemId).toLowerCase() : undefined,
     note,
     isTakeaway,
     spicy: item?.spicy ?? item?.Spicy ?? "",
@@ -86,12 +87,13 @@ type ActiveOrdersState = {
 
 /* ================= STORE ================= */
 
-export const useActiveOrdersStore = create<ActiveOrdersState>()(
-  persist(
-    (set, get) => ({
-      _hasHydrated: false,
-      setHasHydrated: (state) => set({ _hasHydrated: state }),
-      activeOrders: [],
+const storeCreator: StateCreator<
+  ActiveOrdersState,
+  [["zustand/persist", unknown]]
+> = (set, get) => ({
+  _hasHydrated: false,
+  setHasHydrated: (state) => set({ _hasHydrated: state }),
+  activeOrders: [],
       isFetching: false,
 
   /* ================= APPEND ORDER ================= */
@@ -242,8 +244,6 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
     });
   },
 
-  /* ================= VOID ITEM ================= */
-
   voidOrderItem: (orderId, lineItemId) => {
     const { activeOrders } = get();
 
@@ -254,7 +254,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
         return {
           ...order,
           items: order.items.map((item) => {
-            if (item.lineItemId === lineItemId) {
+            if (String(item.lineItemId || "").toLowerCase() === String(lineItemId || "").toLowerCase()) {
               return { ...item, status: "VOIDED" };
             }
             return item;
@@ -263,10 +263,14 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
       }),
     });
   },
+
   /* ================= MARK ITEM READY ================= */
   markItemReady: async (orderId, lineItemId, skipSync) => {
     const { activeOrders } = get();
     const now = Date.now();
+
+    const order = activeOrders.find((o) => o.orderId === orderId);
+    const tableId = order?.context?.tableId || "";
 
     // 1. Update Local State
     set({
@@ -275,7 +279,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
         return {
           ...order,
           items: order.items.map((item) => {
-            if (item.lineItemId === lineItemId) {
+            if (String(item.lineItemId || "").toLowerCase() === String(lineItemId || "").toLowerCase()) {
               return { ...item, status: "READY", readyAt: now };
             }
             return item;
@@ -290,7 +294,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
         await fetch(`${API_URL}/api/orders/update-item-status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, lineItemId, status: "READY" }),
+          body: JSON.stringify({ orderId, lineItemId, status: "READY", tableId }),
         });
       } catch (err) {
         console.error("❌ [Store] markItemReady sync failed:", err);
@@ -302,6 +306,9 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
   markItemServed: async (orderId, lineItemId, skipSync) => {
     const { activeOrders } = get();
 
+    const order = activeOrders.find((o) => o.orderId === orderId);
+    const tableId = order?.context?.tableId || "";
+
     // 1. Update Local State
     set({
       activeOrders: activeOrders.map((order) => {
@@ -309,7 +316,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
         return {
           ...order,
           items: order.items.map((item) => {
-            if (item.lineItemId === lineItemId) {
+            if (String(item.lineItemId || "").toLowerCase() === String(lineItemId || "").toLowerCase()) {
               return { ...item, status: "SERVED" };
             }
             return item;
@@ -324,7 +331,7 @@ export const useActiveOrdersStore = create<ActiveOrdersState>()(
         await fetch(`${API_URL}/api/orders/update-item-status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, lineItemId, status: "SERVED" }),
+          body: JSON.stringify({ orderId, lineItemId, status: "SERVED", tableId }),
         });
       } catch (err) {
         console.error("❌ [Store] markItemServed sync failed:", err);
@@ -448,17 +455,22 @@ initializeSocketListeners: () => {
   
   (set as any)({ _socketInitialized: true });
 },
-}),
-  {
-    name: "active-orders-storage",
-    storage: createJSONStorage(() => 
-      Platform.OS === 'web' ? window.sessionStorage : AsyncStorage
-    ),
-    onRehydrateStorage: () => (state) => {
-      state?.setHasHydrated(true);
-    },
-  }
-));
+});
+
+export const useActiveOrdersStore = create<ActiveOrdersState>()(
+  persist(
+    storeCreator,
+    {
+      name: "active-orders-storage",
+      storage: createJSONStorage(() => 
+        Platform.OS === 'web' ? window.sessionStorage : AsyncStorage
+      ),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
+    }
+  )
+);
 
 /* ================= HELPERS ================= */
 

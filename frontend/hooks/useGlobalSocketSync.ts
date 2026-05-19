@@ -117,14 +117,15 @@ export function useGlobalSocketSync() {
 
     // --- 3. ITEM STATUS (READY/SERVED) ---
     const handleItemStatus = (payload: { orderId: string; lineItemId: string; status: string; tableId?: string }) => {
-      console.log(`✨ [Socket-Global] Item ${payload.status}:`, payload.lineItemId);
+      const cleanLineItemId = String(payload.lineItemId || "").toLowerCase();
+      console.log(`✨ [Socket-Global] Item ${payload.status}:`, cleanLineItemId);
       
       if (payload.status === "READY") {
-        markItemReady(payload.orderId, payload.lineItemId, true);
+        markItemReady(payload.orderId, cleanLineItemId, true);
       } else if (payload.status === "SERVED") {
-        markItemServed(payload.orderId, payload.lineItemId, true);
+        markItemServed(payload.orderId, cleanLineItemId, true);
       } else if (payload.status === "VOIDED") {
-        voidOrderItem(payload.orderId, payload.lineItemId);
+        voidOrderItem(payload.orderId, cleanLineItemId);
       }
 
       const currentOrder = useOrderContextStore.getState().currentOrder;

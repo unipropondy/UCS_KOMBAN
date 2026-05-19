@@ -1008,12 +1008,19 @@ router.post("/update-item-status", async (req, res) => {
     const pool = await poolPromise;
     const statusMap = { 'NEW': 1, 'SENT': 2, 'READY': 3, 'SERVED': 4, 'HOLD': 5, 'VOIDED': 0 };
 
-    // Fetch orderNumber first so we can emit it
+    // Fetch orderNumber and TableId so we can emit them correctly
     const orderRes = await pool.request()
       .input("id", sql.UniqueIdentifier, lineItemId)
-      .query("SELECT h.OrderNumber FROM RestaurantOrderDetailCur d JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId WHERE d.OrderDetailId = @id");
+      .query(`
+        SELECT h.OrderNumber, tm.TableId 
+        FROM RestaurantOrderDetailCur d 
+        JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
+        LEFT JOIN TableMaster tm ON (h.Tableno = tm.TableNumber OR h.Tableno = tm.TableId)
+        WHERE d.OrderDetailId = @id
+      `);
 
     const orderId = orderRes.recordset[0]?.OrderNumber;
+    const resolvedTableId = orderRes.recordset[0]?.TableId || tableId;
 
     await pool.request()
       .input("id", sql.VarChar(50), lineItemId)
@@ -1023,7 +1030,7 @@ router.post("/update-item-status", async (req, res) => {
     req.app.get("io")?.emit("item_status_updated", {
       lineItemId,
       status,
-      tableId: String(tableId || "").toLowerCase(),
+      tableId: String(resolvedTableId || "").toLowerCase(),
       orderId
     });
     res.json({ success: true });
