@@ -69,6 +69,7 @@ const SOLID_LIGHT_RED   = '#FEF2F2';
 
 export default function LockedTablesScreen() {
   const { user } = useAuthStore();
+  const tables = useTableStatusStore((s: any) => s.tables);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -230,6 +231,23 @@ export default function LockedTablesScreen() {
         setLockModalVisible(false);
         setAllTables((prev) => prev.map((t) => t.tableId === lockingTableId ? { ...t, isLocked: true, status: 5 } : t));
         setLockedTables((prev) => [...prev, { tableId: lockingTableId, tableNumber: lockingTableNumber, status: 5 }]);
+        
+        // Optimistic store update
+        const targetTable = allTables.find((t) => t.tableId === lockingTableId);
+        if (targetTable) {
+          const section = getSectionFromDiningSection(targetTable.diningSection);
+          useTableStatusStore.getState().updateTableStatus(
+            lockingTableId,
+            section,
+            lockingTableNumber,
+            "SYNC",
+            "LOCKED",
+            undefined,
+            lockModalName.trim(),
+            0
+          );
+        }
+        
         fetchData();
       } else {
         const data = await res.json();
@@ -261,6 +279,23 @@ export default function LockedTablesScreen() {
       if (res.ok) {
         setUnlockModalVisible(false);
         setAllTables((prev) => prev.map((t) => t.tableId === unlockingTableId ? { ...t, isLocked: false } : t));
+        
+        // Optimistic store update
+        const targetTable = allTables.find((t) => t.tableId === unlockingTableId);
+        if (targetTable) {
+          const section = getSectionFromDiningSection(targetTable.diningSection);
+          useTableStatusStore.getState().updateTableStatus(
+            unlockingTableId,
+            section,
+            unlockingTableNumber,
+            "SYNC",
+            "EMPTY",
+            undefined,
+            undefined,
+            0
+          );
+        }
+        
         fetchData();
       } else {
         Alert.alert("Error", "Failed to unlock table");
@@ -294,11 +329,13 @@ export default function LockedTablesScreen() {
   }, [allTables, activeSection]);
 
   const renderTableItem = ({ item }: { item: TableType }) => {
-    const tableStatusData = useTableStatusStore.getState().tables.find(t => 
+    const tableStatusData = tables.find((t: any) => 
       t.section === getSectionFromDiningSection(item.diningSection) && t.tableNo === item.tableNumber
     );
     
-    const status = Number(item.status || (tableStatusData?.status === 'LOCKED' ? 5 : 0));
+    const status = tableStatusData
+      ? (tableStatusData.status === 'SENT' ? 1 : tableStatusData.status === 'BILL_REQUESTED' ? 2 : tableStatusData.status === 'HOLD' ? 3 : tableStatusData.status === 'LOCKED' ? 5 : 0)
+      : Number(item.status);
     const ui = getStatusUI(status);
     
     const iconSize = Math.max(22, itemSize * 0.18);

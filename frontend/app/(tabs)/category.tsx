@@ -575,6 +575,21 @@ export default function Category() {
               );
               const data = await res.json();
               if (res.ok && data.success) {
+                // Optimistic store update
+                const targetTable = allTables.find((t) => t.id === tableId);
+                if (targetTable) {
+                  const section = getSectionFromDiningSection(targetTable.DiningSection);
+                  useTableStatusStore.getState().updateTableStatus(
+                    tableId,
+                    section,
+                    tableLabel,
+                    "SYNC",
+                    "EMPTY",
+                    undefined,
+                    undefined,
+                    0
+                  );
+                }
                 fetchLockedTables();
                 Alert.alert("Success", `Table ${tableLabel} unlocked.`);
               } else {

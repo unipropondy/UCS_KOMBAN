@@ -121,9 +121,10 @@ router.post("/lock-persistent", async (req, res) => {
     request.input("lockedByName", sql.NVarChar, lockedByName || null);
     request.input("ModifiedBy", sql.UniqueIdentifier, userId || null);
 
-    await request.query(`
+    const result = await request.query(`
       UPDATE TableMaster 
-      SET Status = 5, LockedByName = @lockedByName, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy
+      SET Status = 5, LockedByName = @lockedByName, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE()
+      OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
       WHERE TableId = @tableId
     `);
 
@@ -135,12 +136,17 @@ router.post("/lock-persistent", async (req, res) => {
     // 🔥 Emit socket event
     const io = req.app.get("io");
     if (io) {
+      const row = result.recordset[0];
+      const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
       io.emit("table_status_updated", { 
         tableId: cleanTableId, 
         status: 5, 
         totalAmount: 0, 
         startTime: null,
-        lockedByName: lockedByName || null 
+        lockedByName: lockedByName || null,
+        tableNo: row?.TableNumber,
+        section: sectionMap[String(row?.DiningSection)] || row?.DiningSection,
+        modifiedOn: row?.ModifiedOn
       });
     }
 
@@ -158,12 +164,13 @@ router.post("/unlock-persistent", async (req, res) => {
     if (!tableId) return res.status(400).json({ error: "tableId is required" });
 
     const cleanTableId = tableId.replace(/^\{|\}$/g, "").trim();
-    await pool.request()
+    const result = await pool.request()
       .input("tableId", sql.VarChar(50), cleanTableId)
       .input("ModifiedBy", sql.UniqueIdentifier, userId || null)
       .query(`
         UPDATE TableMaster 
-        SET Status = 0, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy
+        SET Status = 0, LockedByName = NULL, TotalAmount = 0, StartTime = NULL, ModifiedBy = @ModifiedBy, ModifiedOn = GETDATE()
+        OUTPUT INSERTED.TableNumber, INSERTED.DiningSection, CONVERT(VARCHAR, INSERTED.ModifiedOn, 126) AS ModifiedOn
         WHERE TableId = @tableId
       `);
 
@@ -175,11 +182,17 @@ router.post("/unlock-persistent", async (req, res) => {
     // 🔥 Emit socket event
     const io = req.app.get("io");
     if (io) {
+      const row = result.recordset[0];
+      const sectionMap = { "1": "SECTION_1", "2": "SECTION_2", "3": "SECTION_3", "4": "TAKEAWAY" };
       io.emit("table_status_updated", { 
         tableId: cleanTableId, 
         status: 0, 
         totalAmount: 0,
-        lockedByName: null 
+        startTime: null,
+        lockedByName: null,
+        tableNo: row?.TableNumber,
+        section: sectionMap[String(row?.DiningSection)] || row?.DiningSection,
+        modifiedOn: row?.ModifiedOn
       });
     }
 
