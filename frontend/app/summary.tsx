@@ -6,6 +6,7 @@ import {
   FlatList,
   Keyboard,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
