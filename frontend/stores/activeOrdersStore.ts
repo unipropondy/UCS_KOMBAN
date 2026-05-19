@@ -11,7 +11,7 @@ import { socket } from "../constants/socket";
 /* ================= TYPES ================= */
 
 export type OrderItem = CartItem & {
-  status: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED";
+  status: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED" | "HOLD";
   sentAt?: number;
   readyAt?: number;
   dishGroupName?: string; // 🔥 Added

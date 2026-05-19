@@ -36,7 +36,7 @@ export type CartItem = {
   isTakeaway?: boolean;
   isVoided?: boolean;
   categoryName?: string; 
-  status?: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED";
+  status?: "NEW" | "SENT" | "VOIDED" | "READY" | "SERVED" | "HOLD";
   DateCreated?: string | number;
   KitchenTypeName?: string;
   PrinterIP?: string;
@@ -130,7 +130,10 @@ const normalizeCartItem = (item: any, fallback: Partial<CartItem> = {}): CartIte
     sugar: getNormalizedText(item.sugar, item.Sugar, fallback.sugar),
     isVoided: getNormalizedBoolean(item.isVoided, item.IsVoided, fallback.isVoided),
     status: (item.StatusCode === 0 || item.statusCode === 0) ? "VOIDED" : 
-            (item.StatusCode >= 2 || item.statusCode >= 2) ? "SENT" :
+            (item.StatusCode === 3 || item.statusCode === 3) ? "READY" :
+            (item.StatusCode === 4 || item.statusCode === 4) ? "SERVED" :
+            (item.StatusCode === 5 || item.statusCode === 5) ? "HOLD" :
+            (item.StatusCode === 2 || item.statusCode === 2) ? "SENT" :
             (item.status || item.Status || fallback.status || "NEW"),
     DateCreated: item.DateCreated || fallback.DateCreated,
     categoryName: item.categoryName || fallback.categoryName,
@@ -1080,6 +1083,11 @@ export const useCartStore = create<CartState>()(
                 // Determine the most "advanced" status (SENT is more advanced than NEW)
                 const isSent = localMatch.status === 'SENT' || dbItem.status === 'SENT' || !!localMatch.sent;
                 
+                const finalStatus = (dbItem.status === 'READY' || dbItem.status === 'SERVED' || dbItem.status === 'VOIDED' || dbItem.status === 'HOLD')
+                  ? dbItem.status
+                  : (isSent ? 'SENT' : (localMatch.status || dbItem.status));
+                const finalSent = (finalStatus === 'SENT' || finalStatus === 'READY' || finalStatus === 'SERVED' || finalStatus === 'HOLD') ? 1 : 0;
+
                 return {
                   ...dbItem,
                   qty: localMatch.qty,
@@ -1093,8 +1101,8 @@ export const useCartStore = create<CartState>()(
                     ? (localMatch.discount ?? dbItem.discount) 
                     : (dbItem.discount ?? localMatch.discount ?? 0),
                   modifiers: localMatch.modifiers,
-                  status: isSent ? 'SENT' : (localMatch.status || dbItem.status),
-                  sent: isSent ? 1 : 0
+                  status: finalStatus,
+                  sent: finalSent
                 };
               }
               return dbItem;
