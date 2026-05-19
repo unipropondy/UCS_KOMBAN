@@ -1023,7 +1023,7 @@ router.post("/update-item-status", async (req, res) => {
     const resolvedTableId = orderRes.recordset[0]?.TableId || tableId;
 
     await pool.request()
-      .input("id", sql.VarChar(50), lineItemId)
+      .input("id", sql.UniqueIdentifier, lineItemId)
       .input("code", sql.Int, statusMap[status] || 2)
       .query("UPDATE RestaurantOrderDetailCur SET StatusCode = @code, ModifiedOn = GETDATE() WHERE OrderDetailId = @id");
 
