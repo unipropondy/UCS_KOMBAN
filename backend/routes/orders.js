@@ -1015,7 +1015,7 @@ router.post("/update-item-status", async (req, res) => {
         SELECT h.OrderNumber, tm.TableId 
         FROM RestaurantOrderDetailCur d 
         JOIN RestaurantOrderCur h ON d.OrderId = h.OrderId 
-        LEFT JOIN TableMaster tm ON (h.Tableno = tm.TableNumber OR h.Tableno = tm.TableId)
+        LEFT JOIN TableMaster tm ON h.Tableno = tm.TableNumber
         WHERE d.OrderDetailId = @id
       `);
 
