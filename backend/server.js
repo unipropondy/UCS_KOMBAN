@@ -48,19 +48,19 @@ io.on("connection", (socket) => {
   // Broadcast new orders to other clients (e.g. KDS screens)
   socket.on("new_order", (data) => {
     console.log("📦 [Server] New order event received:", data.orderId);
-    socket.broadcast.emit("new_order", data);
+    io.emit("new_order", data);
   });
 
   // 🚀 INSTANT SYNC: Relay cart changes between tablets without DB lag
   socket.on("cart_change", (data) => {
     console.log("🛒 [Server] Cart change relay:", data.tableId);
-    socket.broadcast.emit("cart_change", data);
+    io.emit("cart_change", data);
   });
 
   // Broadcast status updates (e.g. order completed, items voided)
   socket.on("order_status_update", (data) => {
     console.log("🔄 [Server] Order status update received:", data.orderId);
-    socket.broadcast.emit("order_status_update", data);
+    io.emit("order_status_update", data);
   });
 
   socket.on("disconnect", () => {

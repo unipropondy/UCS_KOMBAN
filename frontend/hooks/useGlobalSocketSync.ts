@@ -145,7 +145,7 @@ export function useGlobalSocketSync() {
         // Lower priority than cart_change relay
         throttledFetch(data.tableId, 2000); 
       }
-      useActiveOrdersStore.getState().fetchActiveKitchenOrders();
+      // 🚀 Removed fetchActiveKitchenOrders() here to stop API spam on every single cart modification
     };
 
     // --- 5. ORDER STATUS (CLOSE/VOID) ---
@@ -156,6 +156,34 @@ export function useGlobalSocketSync() {
       } else if (payload.action === "VOID" && payload.lineItemId) {
         voidOrderItem(payload.orderId, payload.lineItemId);
       }
+    };
+
+    // --- 5.5 ORDER CLOSED (PAYMENT WIPE) ---
+    const handleOrderClosed = (data: { tableId: string; tableNo: string; section: string }) => {
+      const { tableId, tableNo, section } = data;
+      console.log(`🧹 [Socket-Global] Order Closed for Table: ${tableId} (${tableNo}). Wiping KDS...`);
+      const store = useActiveOrdersStore.getState();
+      const activeOrders = store.activeOrders;
+      
+      const cleanTargetId = tableId ? String(tableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : null;
+      const cleanTargetNo = tableNo ? String(tableNo).trim().toLowerCase() : null;
+      const cleanTargetSection = section ? String(section).trim().toLowerCase() : null;
+
+      const filtered = activeOrders.filter(o => {
+        if (cleanTargetId) {
+          const oId = o.context?.tableId ? String(o.context.tableId).replace(/^\{|\}$/g, "").trim().toLowerCase() : null;
+          if (oId === cleanTargetId) return false;
+        }
+        if (cleanTargetNo) {
+          const oNo = o.context?.tableNo ? String(o.context.tableNo).trim().toLowerCase() : null;
+          const oSec = o.context?.section ? String(o.context.section).trim().toLowerCase() : null;
+          const matchNo = oNo === cleanTargetNo;
+          const matchSec = !cleanTargetSection || !oSec || oSec === cleanTargetSection;
+          if (matchNo && matchSec) return false;
+        }
+        return true;
+      });
+      useActiveOrdersStore.setState({ activeOrders: filtered });
     };
 
     // --- 6. INSTANT CART SYNC (Socket-First) ---
@@ -183,6 +211,7 @@ export function useGlobalSocketSync() {
     socket.on("item_status_updated", handleItemStatus);
     socket.on("cart_updated", handleCartUpdated);
     socket.on("order_status_update", handleOrderStatusUpdate);
+    socket.on("order_closed", handleOrderClosed);
     socket.on("cart_change", handleCartChange);
 
     return () => {
@@ -192,6 +221,7 @@ export function useGlobalSocketSync() {
       socket.off("item_status_updated", handleItemStatus);
       socket.off("cart_updated", handleCartUpdated);
       socket.off("order_status_update", handleOrderStatusUpdate);
+      socket.off("order_closed", handleOrderClosed);
       socket.off("cart_change", handleCartChange);
     };
   }, []);

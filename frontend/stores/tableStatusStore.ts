@@ -67,7 +67,8 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
         }
         // 🚀 FIX: Strictly ignore external updates if recently edited locally (< 3s)
         // This prevents flicker when background fetches return stale data before DB catches up.
-        if (now - lastEdit < 3000) return state;
+        // UNLESS the status is EMPTY (0), which means the table was paid and should clear instantly.
+        if (now - lastEdit < 3000 && status !== 'EMPTY' && (status as any) !== 0) return state;
       }
 
       const parsedStartTime = typeof startTime === 'string' 
@@ -245,7 +246,8 @@ export const useTableStatusStore = create<TableStatusState>((set, get) => ({
 
         // 🛡️ SYNC SHIELD: Ignore stale background updates if recently edited locally
         // 🚀 FIX: Removed !update.lastModified check to strictly honor the 3s window.
-        if (now - lastEdit < 3000) return;
+        // UNLESS the status is EMPTY (0), which means the table was paid and should clear instantly.
+        if (now - lastEdit < 3000 && update.status !== 'EMPTY' && (update.status as any) !== 0) return;
 
         const existingIndex = newTables.findIndex(
           (t) => (String(t.tableId || "").replace(/^\{|\}$/g, "").trim().toLowerCase() === cleanUpdateId && !!cleanUpdateId) || (t.section === update.section && t.tableNo === update.tableNo)

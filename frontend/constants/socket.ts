@@ -2,7 +2,7 @@ import { io, Socket } from "socket.io-client";
 import { API_URL } from "./Config";
 
 export const socket: Socket = io(API_URL, {
-  transports: ["polling", "websocket"], // polling first ensures handshake succeeds, then upgrades
+  transports: ["websocket", "polling"], // websocket first skips polling handshake delay on mobile
   reconnectionAttempts: 20,
   reconnectionDelay: 1500,
   reconnectionDelayMax: 5000,
